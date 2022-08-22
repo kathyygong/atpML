@@ -11,16 +11,16 @@ from datetime import date, timedelta
 
 pd.options.display.max_columns = 999
 
-# We are loading the mens match csv
+# load mens match csv
 df_atp = pd.read_csv("data.csv")
 
-# Include hard and indoor hard only
+# include hard and indoor hard only
 df_atp = df_atp.loc[df_atp.Court_Surface.isin(['Hard','Indoor Hard'])]
 
-# Exclude qualifying rounds
+# exclude qualifying rounds
 df_atp = df_atp.loc[df_atp.Round_Description != 'Qualifying']
 
-# Store the shape of the data for reference check later
+# store shape of data for reference check later
 atp_shape = df_atp.shape
 
 numeric_columns = ['Winner_Rank', 'Loser_Rank', 'Retirement_Ind',
@@ -41,42 +41,42 @@ text_columns = ['Winner', 'Loser',  'Tournament', 'Court_Surface','Round_Descrip
 
 date_columns = ['Tournament_Date']
 
-# we set the **erros** to coerce so any non-numerical values (text,special characters) will return an NA
+# set **erros** to coerce so any non-numerical values (text,special characters) will return an NA
 df_atp[numeric_columns] = df_atp[numeric_columns].apply(pd.to_numeric,errors = 'coerce')
 
 
 df_atp[date_columns] = df_atp[date_columns].apply(pd.to_datetime)
 
-# Before we split the data frame into winner and loser, we want to create a feature that captures the total number of games the match takes.
-# We have to do it before the split or we will lose this information
+# before splitting data frame into winner/loser, create feature that captures total number of games match takes
+# do this before split or will lose this information
 df_atp['Total_Games'] = df_atp.Winner_Games_Won + df_atp.Loser_Games_Won
 
 
-# Get the column names for the winner and loser stats
+# get column names for the winner/loser stats
 winner_cols = [col for col in df_atp.columns if col.startswith('Winner')]
 loser_cols = [col for col in df_atp.columns if col.startswith('Loser')]
 
-# create a winner data frame to store the winner stats and a loser data frame for the losers
+# create winner/loser data frames to store winner/loser stats
 # In addition to the winner and loser columns, we are adding common columns as well (e.g. tournamnt dates)
 common_cols = ['Total_Games','Tournament','Tournament_Date', 'Court_Surface','Round_Description']
 df_winner_atp = df_atp[winner_cols + common_cols]
 df_loser_atp = df_atp[loser_cols + common_cols]
 
-# Create a new column to show whether the player has won or not.
+# create new column to show whether player has won or not
 df_winner_atp["won"] = 1
 df_loser_atp["won"] = 0
 
 
-# Rename the columns for the winner and loser data frames so we can append them later on.
-# We will rename the Winner_ / Loser_ columns to Player_
+# rename columns for winner/loser data frames to append later on.
+# rename Winner_ / Loser_ columns to Player_
 new_column_names = [col.replace('Winner','Player') for col in winner_cols]
 df_winner_atp.columns = new_column_names + common_cols + ['won']
 df_loser_atp.columns  = df_winner_atp.columns
 
-# append the winner and loser data frames
+# append winner/loser data frames
 df_long_atp= df_winner_atp.append(df_loser_atp)
 
-# Here, we will define a function so we can apply it to both atp and wta data frames
+# define function to apply it to both atp and wta data frames
 def get_new_features(df):
 # Input:
 # df: data frame to get the data from
@@ -92,23 +92,23 @@ def get_new_features(df):
 
     return df
 
-# Apply the function we just created to the long data frames
+# apply the function just created to long data frames
 df_long_atp = get_new_features(df_long_atp)
 
-# The long table should have exactly twice of the rows of the original data
+# long table should have exactly twice of the rows of the original data
 assert df_long_atp.shape[0] == atp_shape[0]*2
 
-# the two tournaments we will be using for training and thus the feature generation
+# tournaments to use for training
 tournaments = ['U.S. Open, New York','Australian Open, Melbourne']
 
-# Store the dates for the loops
+# store dates for loops
 tournament_dates_atp = df_atp.loc[df_atp.Tournament.isin(tournaments)].groupby(['Tournament','Tournament_Date']) \
 .size().reset_index()[['Tournament','Tournament_Date']]
 
-# We are adding one more date for the final prediction
+# add one more date for final prediction
 tournament_dates_atp.loc[-1] = ['Australian Open, Melbourne',pd.to_datetime('2019-01-15')]
 
-# Let's define a function to calculate the rolling averages
+# define a function to calculate the rolling averages
 def get_rolling_features (df, date_df=None,rolling_cols = None, last_cols= None):
 
     # Input:
@@ -120,7 +120,7 @@ def get_rolling_features (df, date_df=None,rolling_cols = None, last_cols= None)
      # Return: the df with the new features
 
 
-    # Sort the data by player and dates so the most recent matches are at the bottom
+    # sort data by player and dates so most recent matches are at bottom
     df = df.sort_values(['Player','Tournament_Date','Tournament'], ascending=True)
 
     # For each tournament, get the rolling averages of that player's past matches before the tournament start date
@@ -176,11 +176,11 @@ df_atp['player_1_win'] = np.where(df_atp['random_number']==0,1,0)
 
 print ('After shuffling, the win rate for player 1 for the mens is {}%'.format(df_atp['player_1_win'].mean()*100))
 
-# To get our data frames ready for model training, we will exclude other tournaments from the data now because we have gotten the rolling averages from them and
-# for training, we only need US and Australian Open matches
+# To get data frames ready for model training, exclude other tournaments from data now because have gotten the rolling averages from them and
+# for training, only need US and Australian Open matches
 df_atp = df_atp.loc[df_atp.Tournament.isin(tournaments)]
 
-# now we can remove other stats columns because we will be using the differences
+# remove other stats columns (using the differences)
 cols_to_keep = ['Winner','Loser','Tournament','Tournament_Date',
                     'player_1_win','randomised_player_1',
                     'randomised_player_2']
@@ -188,8 +188,8 @@ cols_to_keep = ['Winner','Loser','Tournament','Tournament_Date',
 df_atp = df_atp[cols_to_keep]
 
 
-# Here, we are joining the rolling average data frames to the individual matches.
-# We need to do it twice. One for player 1 and one for player 2
+# joining the rolling average data frames to the individual matches.
+# do it twice - one for player 1 and one for player 2
 
 # Get the rolling features for player 1
 df_atp = df_atp.merge(df_rolling_atp, how='left',
@@ -198,7 +198,7 @@ df_atp = df_atp.merge(df_rolling_atp, how='left',
                       validate ='m:1')
 
 # Get the rolling features for player 2
-# we will use '_p1' to denote player 1 and '_p2' for player 2
+# use '_p1' to denote player 1 and '_p2' for player 2
 df_atp = df_atp.merge(df_rolling_atp, how='left',
                       left_on = ['randomised_player_2','Tournament_Date'],
                       right_on = ['Player','tournament_date_index'],
@@ -311,7 +311,7 @@ df_predict_atp['player_2'] =df_predict_atp['player_2'].str.lower()
 
 df_rolling_atp['Player'] = df_rolling_atp['Player'].str.lower()
 
-# Lastly, some players have slightly difference names in the submission data and the match data. So we are editing them here manually
+# some players have slightly difference names in the submission data and the match data - editing them manually
 df_predict_atp.loc[df_predict_atp.player_1=='jaume munar','player_1'] = 'jaume antoni munar clar'
 df_predict_atp.loc[df_predict_atp.player_2=='jaume munar','player_2'] = 'jaume antoni munar clar'
 
@@ -324,7 +324,7 @@ df_predict_atp = df_predict_atp.merge(df_rolling_atp, how='left',
                      right_on = ['Player','tournament_date_index'],validate ='m:1')
 
 # Get the rolling features for player 2
-# For duplicate columns, we will use '_p1' to denote player 1 and '_p2' for player 2
+# For duplicate columns, use '_p1' to denote player 1 and '_p2' for player 2
 df_predict_atp = df_predict_atp.merge(df_rolling_atp, how='left',
                      left_on = ['player_2','Tournament_Date'],
                      right_on = ['Player','tournament_date_index'],validate ='m:1',suffixes=('_p1','_p2'))
